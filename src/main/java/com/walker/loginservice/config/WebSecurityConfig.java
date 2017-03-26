@@ -1,11 +1,13 @@
 package com.walker.loginservice.config;
 
-import com.walker.loginservice.repository.UserRepository;
-import com.walker.loginservice.security.AjaxAuthenticationFailureHandler;
-import com.walker.loginservice.security.AjaxAuthenticationSuccessHandler;
-import com.walker.loginservice.security.CustomUserDetailService;
-import com.walker.loginservice.util.Constants;
+import org.keycloak.adapters.springsecurity.KeycloakSecurityComponents;
+import org.keycloak.adapters.springsecurity.config.KeycloakWebSecurityConfigurerAdapter;
+import org.keycloak.adapters.springsecurity.filter.KeycloakAuthenticationProcessingFilter;
+import org.keycloak.adapters.springsecurity.filter.KeycloakPreAuthActionsFilter;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.env.Environment;
@@ -14,7 +16,12 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.web.authentication.logout.LogoutFilter;
+import org.springframework.security.web.authentication.preauth.x509.X509AuthenticationFilter;
 import org.springframework.security.web.authentication.rememberme.PersistentTokenRepository;
+import org.springframework.security.web.authentication.session.NullAuthenticatedSessionStrategy;
+import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
 
 
 /**
@@ -22,56 +29,51 @@ import org.springframework.security.web.authentication.rememberme.PersistentToke
  */
 @Configuration
 @EnableWebSecurity
-@EnableGlobalMethodSecurity(prePostEnabled = true, securedEnabled = true)
 @Profile(value = {"dev", "default"})
-public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
+public class WebSecurityConfig extends KeycloakWebSecurityConfigurerAdapter {
 
-    private UserRepository userRepository;
-
-    private PersistentTokenRepository persistentTokenRepository;
-
-    private Environment environment;
-
-    private CustomUserDetailService customUserDetailService;
 
     @Autowired
-    public WebSecurityConfig(CustomUserDetailService customUserDetailService, UserRepository userRepository, PersistentTokenRepository persistentTokenRepository, Environment environment){
-        this.customUserDetailService = customUserDetailService;
-        this.userRepository = userRepository;
-        this.persistentTokenRepository = persistentTokenRepository;
-        this.environment = environment;
+    public void configureGlobal(AuthenticationManagerBuilder auth) throws Exception {
+        auth.authenticationProvider(keycloakAuthenticationProvider());
     }
 
+    @Bean
+    @Override
+    protected SessionAuthenticationStrategy sessionAuthenticationStrategy() {
+        return new NullAuthenticatedSessionStrategy();
+    }
+
+    @Bean
+    public FilterRegistrationBean keycloakAuthenticationProcessingFilterRegistrationBean(
+            KeycloakAuthenticationProcessingFilter filter) {
+        FilterRegistrationBean registrationBean = new FilterRegistrationBean(filter);
+        registrationBean.setEnabled(false);
+        return registrationBean;
+    }
+
+    @Bean
+    public FilterRegistrationBean keycloakPreAuthActionsFilterRegistrationBean(
+            KeycloakPreAuthActionsFilter filter) {
+        FilterRegistrationBean registrationBean = new FilterRegistrationBean(filter);
+        registrationBean.setEnabled(false);
+        return registrationBean;
+    }
 
     @Override
-    protected void configure(HttpSecurity http) throws Exception {
+    protected void configure(HttpSecurity http) throws Exception
+    {
         http
-            .csrf().disable()
-            .exceptionHandling()
-        .and()
-            .authorizeRequests()
-            .anyRequest().fullyAuthenticated().antMatchers("/RoleServices/**").hasAuthority(Constants.PERM_USER_MANAGEMENT)
-            .anyRequest().fullyAuthenticated().antMatchers("/PermissionServices/**").hasAuthority(Constants.PERM_USER_MANAGEMENT)
-        .and()
-            .formLogin()
-            .loginProcessingUrl("/api")
-            .defaultSuccessUrl("/api")
-            .successHandler(new AjaxAuthenticationSuccessHandler(userRepository))
-            .failureHandler(new AjaxAuthenticationFailureHandler())
-            .usernameParameter("userName")
-            .passwordParameter("password")
-        .and()
-            .rememberMe()
-            .rememberMeParameter("rememberMe")
-            .tokenRepository(persistentTokenRepository)
-            .rememberMeCookieName("remember-me")
-            .userDetailsService(customUserDetailService)
-            .tokenValiditySeconds(86400);
-    }
-
-    @Override
-    public void configure(AuthenticationManagerBuilder auth) throws Exception {
-        auth.userDetailsService(customUserDetailService);
+                .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                .sessionAuthenticationStrategy(sessionAuthenticationStrategy())
+                .and()
+                .addFilterBefore(keycloakPreAuthActionsFilter(), LogoutFilter.class)
+                .addFilterBefore(keycloakAuthenticationProcessingFilter(), X509AuthenticationFilter.class)
+                .exceptionHandling().authenticationEntryPoint(authenticationEntryPoint())
+                .and()
+                .authorizeRequests()
+                .antMatchers("/**").authenticated()
+                .anyRequest().permitAll();
     }
 
 }

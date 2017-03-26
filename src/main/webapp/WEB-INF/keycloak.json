@@ -1,0 +1,8 @@
+{
+  "realm": "demo",
+  "auth-server-url": "http://localhost:8080/auth",
+  "bearer-only": true,
+  "ssl-required": "external",
+  "resource": "loginservice",
+  "always-refresh-token": true
+}

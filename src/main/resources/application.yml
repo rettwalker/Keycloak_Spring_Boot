@@ -34,3 +34,5 @@ spring:
     database: H2
     show_sql: true
     generate-ddl: true
+server:
+  port: 9000
